@@ -130,3 +130,62 @@ Db::get()->createQueryBuilder('Usuario', 'u')
 
 ```
 
+Crear, Actualizar, Eliminar
+----
+
+```php
+<?php
+
+use Manuelj555\ORM\Db;
+
+class Usuario
+{
+    const TABLE = 'user'; //opcional, por defecto la clase en small_case
+    
+    protected id;
+    protected name;
+    protected email;
+    
+    public function getId(){ return $this->id; }
+    
+    public function getName(){ return $this->name; }
+    
+    public function setName($name){ $this->name = $name; }
+    
+    public function getEmail(){ return $this-email; }
+    
+    public function setEmail($e){ $this->email = $e; }
+}
+
+$user = new Usuario();
+
+$user->setName("Manuel");
+$user->setEmail("manuel@test.com");
+
+Db::get()->save($user);
+Db::get()->flush(); //las consultas no se ejecutan hasta hacer flush() o commit();
+
+Db::get()->save($user);
+Db::get()->flush(); //No actualiza, porque no se cambió nada en el objeto.
+
+$user->setName("Manuel José");
+
+Db::get()->save($user); //actualiza solo el name
+Db::get()->save($user); //no hace nada
+Db::get()->save($user); //no hace nada
+Db::get()->flush(); //Hace commit.
+
+$user = Db::get()->find('Usuario', 1);
+
+Db::get()->save($user); //no hace nada
+
+$user->setName("Manuel 2");
+$user->setEmail("manuel@test.com");
+
+Db::get()->save($user); //actualiza solo el name, porque el email no cambió.
+Db::get()->flush(); //Hace commit.
+
+Db::get()->remove($user); //elimina el usuario de la BD
+Db::get()->flush(); //Hace commit.
+
+```
