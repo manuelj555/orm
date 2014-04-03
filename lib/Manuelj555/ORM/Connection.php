@@ -104,7 +104,13 @@ class Connection extends PDO
      */
     public function createQueryBuilder($class = null, $alias = null)
     {
-        return new QueryBuilder($this, $class, $alias);
+        $query = new QueryBuilder($this, $class, $alias);
+
+        if ($class) {
+            $query->select($this->getTableFor($class)->columns);
+        }
+
+        return $query;
     }
 
     public function save($object)
@@ -162,6 +168,31 @@ class Connection extends PDO
     public function findAll($class, array $by = array(), $fetch = null)
     {
         return $this->prepareFind($class, $by)->fetchAll($fetch);
+    }
+
+    public function __call($name, $arguments)
+    {
+        if (0 === strpos($name, 'findBy')) {
+            $property = substr($name, 6);
+            $method = 'findBy';
+        } elseif (0 === strpos($name, 'findAllBy')) {
+            $property = substr($name, 9);
+            $method = 'findAll';
+        } else {
+            trigger_error(sprintf('Call to undefined method %s::%s()', __CLASS__, $name));
+        }
+
+        $property[0] = strtolower($property[0]);
+
+        if (count($arguments) != 2) {
+            throw new \InvalidArgumentException('Invalid Number of Arguments, expected 2');
+        }
+
+        list($class, $value) = $arguments;
+
+        return call_user_func_array(array($this, $method), array(
+            $class, array($property => $value)
+        ));
     }
 
     protected function prepareFind($class, array $by)

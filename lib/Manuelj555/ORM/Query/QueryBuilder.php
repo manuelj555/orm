@@ -57,11 +57,7 @@ class QueryBuilder
         $this->class = $class;
 
         if ($class) {
-
-            return $this->add('from', array(
-                        'table' => ModelUtil::getTableName($class),
-                        'alias' => $alias,
-                            ), true);
+            return $this->from(ModelUtil::getTableName($class), $alias);
         }
     }
 
