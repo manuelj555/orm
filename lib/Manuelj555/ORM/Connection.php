@@ -93,7 +93,7 @@ class Connection extends PDO
         $statement = $this->prepare($sql);
         $statement->setFetchMode(self::FETCH_ASSOC);
         $statement->execute($parameters);
-        var_dump($statement->queryString);
+//        var_dump($statement->queryString);
         return $statement;
     }
 

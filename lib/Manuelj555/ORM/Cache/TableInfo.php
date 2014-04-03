@@ -31,13 +31,16 @@ class TableInfo
     protected $driver;
     protected $debug;
     protected $cache;
+    protected $prefix;
     protected static $tables = array();
 
     public function __construct(Connection $conn)
     {
+        $config = $conn->getConfig();
         $this->driver = $conn->getDriver();
-        $this->cache = $conn->getConfig('cache');
-        $this->debug = $this->cache ? $conn->getConfig('debug') : true;
+        $this->cache = $config['cache'];
+        $this->debug = $this->cache ? $config['debug'] : true;
+        $this->prefix = $config['driver'] . '_' . $config['dbname'];
     }
 
     /**
@@ -58,7 +61,7 @@ class TableInfo
     {
         $file = $this->cachedName($tableName);
         if (false !== $file) {
-            if (!is_file($file) or !$this->debug) {
+            if (!is_file($file) or ! $this->debug) {
                 $table = $this->driver->describeTable($tableName);
                 $this->writeCacheFile($file, serialize($table));
             }
@@ -77,7 +80,7 @@ class TableInfo
             return false;
         }
 
-        return rtrim($this->cache, '/') . '/orm/' . $table;
+        return rtrim($this->cache, '/') . '/orm/' . $this->prefix . '/' . $table;
     }
 
     protected function writeCacheFile($file, $content)
