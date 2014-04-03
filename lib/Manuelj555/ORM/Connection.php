@@ -11,6 +11,7 @@
 
 namespace Manuelj555\ORM;
 
+use InvalidArgumentException;
 use Manuelj555\ORM\Cache\TableInfo;
 use Manuelj555\ORM\Driver\AbstractDriver;
 use Manuelj555\ORM\Query\QueryBuilder;
@@ -18,13 +19,15 @@ use Manuelj555\ORM\Schema\Table;
 use Manuelj555\ORM\Util\ModelUtil;
 use PDO;
 use PDOStatement;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
 /**
  * Description of Connection
  *
  * @author Manuel Aguirre <programador.manuel@gmail.com>
  */
-class Connection extends PDO
+class Connection
 {
 
     /**
@@ -35,7 +38,19 @@ class Connection extends PDO
     protected $config;
     protected $tableInfo;
 
-    public function __construct(array $config)
+    /**
+     *
+     * @var EventDispatcherInterface
+     */
+    protected $dispatcher;
+
+    /**
+     *
+     * @var PDO
+     */
+    protected $pdo;
+
+    public function __construct(array $config, EventDispatcherInterface $dispatcher = null)
     {
         $this->config = $config = array_replace(array(
             'driver' => null,
@@ -48,11 +63,41 @@ class Connection extends PDO
             'cache' => false,
                 ), $config);
 
-        $dsn = "{$config['driver']}:host={$config['host']};dbname={$config['dbname']}";
-
-        parent::__construct($dsn, $config['username'], $config['password'], $config['options']);
-
         $this->setDriver($this->createDriver($config['driver']));
+
+        $this->dispatcher = $dispatcher ? : new EventDispatcher();
+    }
+
+    public function connect()
+    {
+        $dsn = "{$this->config['driver']}:host={$this->config['host']};dbname={$this->config['dbname']}";
+
+        $this->pdo = new PDO($dsn
+                , $this->config['username']
+                , $this->config['password']
+                , $this->config['options']);
+
+        $this->dispatcher->dispatch(Events::CONNECT);
+    }
+
+    /**
+     * @return PDO
+     */
+    protected function getPDO()
+    {
+        if (!$this->pdo) {
+            $this->connect();
+        }
+
+        return $this->pdo;
+    }
+
+    /**
+     * @return EventDispatcherInterface
+     */
+    public function getDispatcher()
+    {
+        return $this->dispatcher;
     }
 
     protected function createDriver($driverName)
@@ -90,10 +135,14 @@ class Connection extends PDO
      */
     public function createQuery($sql, array $parameters = array())
     {
-        $statement = $this->prepare($sql);
-        $statement->setFetchMode(self::FETCH_ASSOC);
+        $statement = $this->getPDO()->prepare($sql);
+        $statement->setFetchMode(PDO::FETCH_ASSOC);
         $statement->execute($parameters);
-//        var_dump($statement->queryString);
+
+        if ($this->dispatcher->hasListeners(Events::QUERY)) {
+            $this->dispatcher->dispatch(Events::QUERY);
+        }
+
         return $statement;
     }
 
@@ -135,14 +184,14 @@ class Connection extends PDO
 
     public function remove($object)
     {
-        if (!$this->inTransaction()) {
+        if (!$this->getPDO()->inTransaction()) {
             $this->beginTransaction();
         }
 
         $table = $this->getTableFor($object);
         $pk = ModelUtil::getPK($table, $object);
 
-        $this->getDriver()->delete($table->name
+        $this->driver->delete($table->name
                 , "{$table->primaryKey} = ?", array($pk));
     }
 
@@ -181,12 +230,14 @@ class Connection extends PDO
         } else {
             trigger_error(sprintf('Call to undefined method %s::%s()', __CLASS__, $name));
         }
+        
+        var_dump(get_defined_vars());
+
+        if (count($arguments) !== 2) {
+            throw new InvalidArgumentException('Invalid Number of Arguments, expected 2');
+        }
 
         $property[0] = strtolower($property[0]);
-
-        if (count($arguments) != 2) {
-            throw new \InvalidArgumentException('Invalid Number of Arguments, expected 2');
-        }
 
         list($class, $value) = $arguments;
 
@@ -198,9 +249,6 @@ class Connection extends PDO
     protected function prepareFind($class, array $by)
     {
         $builder = $this->createQueryBuilder($class)->select('*');
-
-        $index = 0;
-
         $method = 'where';
 
         foreach ($by as $key => $value) {
@@ -231,8 +279,16 @@ class Connection extends PDO
     {
         $values = ModelUtil::getValues($table, $object);
 
+        if ($this->dispatcher->hasListeners(Events::PRE_INSERT)) {
+            $this->dispatcher->dispatch(Events::PRE_INSERT);
+        }
+
         $this->driver->insert($table->name, $values);
         ModelUtil::setPK($table, $object, $this->lastInsertId());
+
+        if ($this->dispatcher->hasListeners(Events::POST_INSERT)) {
+            $this->dispatcher->dispatch(Events::POST_INSERT);
+        }
     }
 
     protected function update(Table $table, $object, $pk)
@@ -240,7 +296,7 @@ class Connection extends PDO
         $values = ModelUtil::getValues($table, $object);
         $where = "{$table->primaryKey} = ?";
 
-        $originals = $this->find(get_class($object), $pk, self::FETCH_ASSOC);
+        $originals = $this->find(get_class($object), $pk, PDO::FETCH_ASSOC);
 
         foreach ($originals as $column => $value) {
             if (array_key_exists($column, $values) and $value === $values[$column]) {
@@ -249,8 +305,52 @@ class Connection extends PDO
         }
 
         if (count($values)) {
+
+            if ($this->dispatcher->hasListeners(Events::PRE_UPDATE)) {
+                $this->dispatcher->dispatch(Events::PRE_UPDATE);
+            }
+
             $this->driver->update($table->name, $values, $where, array($pk));
+
+            if ($this->dispatcher->hasListeners(Events::POST_UPDATE)) {
+                $this->dispatcher->dispatch(Events::POST_UPDATE);
+            }
         }
+    }
+
+    public function beginTransaction()
+    {
+        return $this->getPDO()->beginTransaction();
+    }
+
+    public function commit()
+    {
+        return $this->getPDO()->commit();
+    }
+
+    public function errorCode()
+    {
+        return $this->getPDO()->errorCode();
+    }
+
+    public function errorInfo()
+    {
+        return $this->getPDO()->errorInfo();
+    }
+
+    public function lastInsertId($name = null)
+    {
+        return $this->getPDO()->lastInsertId($name);
+    }
+
+    public function quote($input, $type = \PDO::PARAM_STR)
+    {
+        return $this->getPDO()->quote($input, $type);
+    }
+
+    public function rollBack()
+    {
+        return $this->getPDO()->rollBack();
     }
 
 }

@@ -1,5 +1,11 @@
 {
-    "name": "Manuel Aguirre <programador.manuel@gmail.com>",
+    "name": "manuelj555/orm",
+    "require":{
+        "symfony/event-dispatcher": "dev-master"
+    },
+    "require-dev":{
+        "symfony/dependency-injection": "dev-master"
+    },
     "autoload": {
         "psr-0": {
             "Manuelj555\\ORM\\": "lib"
