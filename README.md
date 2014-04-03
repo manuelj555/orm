@@ -58,3 +58,75 @@ Db::factory(function(){
 });
 
 ```
+
+Consultas
+----
+
+```php
+<?php
+
+use Manuelj555\ORM\Db;
+
+$conection = Db::get(); //por defecto devuelve la conexión 'default';
+$conection = Db::get('otra');
+
+$conection->createQuery("SELECT * FROM usuarios")->fetchAll();
+$conection->createQuery("SELECT * FROM usuarios WHERE nombre = :nom", array(':nombre' => 'Manuel')->fetchAll();
+$conection->createQuery("SELECT * FROM usuarios WHERE nombre = ?", array('Manuel')->fetchAll();
+
+//Usando Db directo:
+
+Db::get('otra')->createQuery("SELECT * FROM usuarios")->fetchAll();
+Db::get()->createQuery("SELECT * FROM usuarios WHERE nombre = ?", array('Manuel')->fetchAll();
+
+//QueryBuilder
+
+Db::get()->createQueryBuilder()
+         ->select('*')
+         ->from('usuarios', 'u')
+         ->join('compras', 'c', 'c.usuarios_id = u.id')
+         ->where('nombre = ?')
+         ->setParameters(array('Manuel'))
+         ->fetchAll();
+
+```
+
+Devolviendo Clases
+----
+
+```php
+<?php
+
+use Manuelj555\ORM\Db;
+
+class Usuario
+{
+    const TABLE = 'user'; //opcional, por defecto la clase en small_case
+    
+    protected id;
+    protected name;
+    
+    public function getId(){ return $this->id; }
+    
+    public function getName(){ return $this->name; }
+    
+    public function setName($name){ $this->name = $name; }
+}
+
+Db::get()->find('Usuario', 2); //busca en la tabla user por id = 2, devuelve una instancia de Usuario.
+
+Db::get()->findBy('Usuario', array('name' => 'Manuel'));
+
+Db::get()->findAll('Usuario');
+Db::get()->findAll('Usuario', array('name' => 'Manuel'));
+
+//Query Builder
+
+Db::get()->createQueryBuilder('Usuario', 'u')
+         ->where('name = :n')
+         ->setParameter(':n' => 'Manuel')
+         ->execute()->fetch();
+
+
+```
+
