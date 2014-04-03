@@ -1,0 +1,8 @@
+{
+    "name": "Manuel Aguirre <programador.manuel@gmail.com>",
+    "autoload": {
+        "psr-0": {
+            "Manuelj555\\ORM\\": "lib"
+        }
+    }
+}
