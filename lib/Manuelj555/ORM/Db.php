@@ -11,6 +11,10 @@
 
 namespace Manuelj555\ORM;
 
+use InvalidArgumentException;
+use Manuelj555\ORM\Listener\ObjectCallbacksListener;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+
 /**
  * @author Manuel Aguirre <programador.manuel@gmail.com>
  */
@@ -32,10 +36,11 @@ class Db
         }
 
         if (!isset(self::$configs[$name])) {
-            throw new \InvalidArgumentException('Config not Exists!');
+            throw new InvalidArgumentException('Config not Exists!');
         }
 
-        return self::$connections[$name] = new Connection(self::$configs[$name]);
+        return self::$connections[$name] = new Connection(self::$configs[$name]
+                , static::createEventDispatcher());
     }
 
     public static function factory($configs)
@@ -46,12 +51,21 @@ class Db
             self::$configs = call_user_func($configs);
 
             if (!is_array(self::$configs)) {
-                throw new \InvalidArgumentException('No Array config!');
+                throw new InvalidArgumentException('No Array config!');
             }
         } else {
 
-            throw new \InvalidArgumentException(sprintf('Expected array or callable, given "%s"', (string) $configs));
+            throw new InvalidArgumentException(sprintf('Expected array or callable, given "%s"', (string) $configs));
         }
+    }
+
+    public static function createEventDispatcher()
+    {
+        $dispatcher = new EventDispatcher();
+
+        $dispatcher->addSubscriber(new ObjectCallbacksListener());
+
+        return $dispatcher;
     }
 
 }

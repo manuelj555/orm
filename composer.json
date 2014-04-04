@@ -4,6 +4,7 @@
         "symfony/event-dispatcher": "dev-master"
     },
     "require-dev":{
+        "symfony/debug": "dev-master",
         "symfony/dependency-injection": "dev-master"
     },
     "autoload": {

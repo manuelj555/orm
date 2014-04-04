@@ -77,7 +77,10 @@ class Connection
                 , $this->config['password']
                 , $this->config['options']);
 
-        $this->dispatcher->dispatch(Events::CONNECT);
+        if ($this->dispatcher->hasListeners(Events::CONNECT)) {
+            $event = new Event\ConnectionEvent($this, $this->pdo);
+            $this->dispatcher->dispatch(Events::CONNECT, $event);
+        }
     }
 
     /**
@@ -140,7 +143,8 @@ class Connection
         $statement->execute($parameters);
 
         if ($this->dispatcher->hasListeners(Events::QUERY)) {
-            $this->dispatcher->dispatch(Events::QUERY);
+            $event = new Event\QueryEvent($statement, $parameters);
+            $this->dispatcher->dispatch(Events::QUERY, $event);
         }
 
         return $statement;
@@ -164,7 +168,7 @@ class Connection
 
     public function save($object)
     {
-        if (!$this->inTransaction()) {
+        if (!$this->getPDO()->inTransaction()) {
             $this->beginTransaction();
         }
 
@@ -188,11 +192,19 @@ class Connection
             $this->beginTransaction();
         }
 
+        $event = new Event\DeleteEvent($object);
+        $this->dispatcher->dispatch(Events::PRE_DELETE, $event);
+
+        if ($event->isStopped()) {
+            return;
+        }
+
         $table = $this->getTableFor($object);
         $pk = ModelUtil::getPK($table, $object);
 
-        $this->driver->delete($table->name
-                , "{$table->primaryKey} = ?", array($pk));
+        $this->driver->delete($table->name, "{$table->primaryKey} = ?", array($pk));
+
+        $this->dispatcher->dispatch(Events::POST_DELETE, $event);
     }
 
     public function flush()
@@ -214,7 +226,9 @@ class Connection
         return $this->prepareFind($class, $by)->fetch($fetch);
     }
 
-    public function findAll($class, array $by = array(), $fetch = null)
+    public function findAll($class, array
+
+    $by = array(), $fetch = null)
     {
         return $this->prepareFind($class, $by)->fetchAll($fetch);
     }
@@ -230,14 +244,13 @@ class Connection
         } else {
             trigger_error(sprintf('Call to undefined method %s::%s()', __CLASS__, $name));
         }
-        
-        var_dump(get_defined_vars());
 
         if (count($arguments) !== 2) {
             throw new InvalidArgumentException('Invalid Number of Arguments, expected 2');
         }
 
-        $property[0] = strtolower($property[0]);
+        $property[0
+                ] = strtolower($property[0]);
 
         list($class, $value) = $arguments;
 
@@ -277,22 +290,36 @@ class Connection
 
     protected function create(Table $table, $object)
     {
-        $values = ModelUtil::getValues($table, $object);
+        $event = new Event\InsertEvent($object, array());
+        $this->dispatcher->dispatch(Events::PRE_INSERT, $event);
 
-        if ($this->dispatcher->hasListeners(Events::PRE_INSERT)) {
-            $this->dispatcher->dispatch(Events::PRE_INSERT);
+        if ($event->isStopped()) {
+            return;
         }
 
-        $this->driver->insert($table->name, $values);
+        $event->setData(ModelUtil::getValues($table, $object));
+
+        $this->dispatcher->dispatch(Events::INSERT, $event);
+
+        if ($event->isStopped()) {
+            return;
+        }
+
+        $this->driver->insert($table->name, $event->getData());
         ModelUtil::setPK($table, $object, $this->lastInsertId());
 
-        if ($this->dispatcher->hasListeners(Events::POST_INSERT)) {
-            $this->dispatcher->dispatch(Events::POST_INSERT);
-        }
+        $this->dispatcher->dispatch(Events::POST_INSERT, $event);
     }
 
     protected function update(Table $table, $object, $pk)
     {
+        $event = new Event\UpdateEvent($object, array(), array());
+        $this->dispatcher->dispatch(Events::PRE_UPDATE, $event);
+
+        if ($event->isStopped()) {
+            return;
+        }
+
         $values = ModelUtil::getValues($table, $object);
         $where = "{$table->primaryKey} = ?";
 
@@ -305,16 +332,16 @@ class Connection
         }
 
         if (count($values)) {
+            $event = new Event\UpdateEvent($object, $values, $originals);
+            $this->dispatcher->dispatch(Events::UPDATE, $event);
 
-            if ($this->dispatcher->hasListeners(Events::PRE_UPDATE)) {
-                $this->dispatcher->dispatch(Events::PRE_UPDATE);
+            if ($event->isStopped()) {
+                return;
             }
 
             $this->driver->update($table->name, $values, $where, array($pk));
 
-            if ($this->dispatcher->hasListeners(Events::POST_UPDATE)) {
-                $this->dispatcher->dispatch(Events::POST_UPDATE);
-            }
+            $this->dispatcher->dispatch(Events:: POST_UPDATE, $event);
         }
     }
 
