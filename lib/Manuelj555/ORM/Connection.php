@@ -198,6 +198,16 @@ class Connection
         return $statement;
     }
 
+    
+    /**
+     * 
+     * @return \Manuelj555\ORM\Query\QueryBuilder
+     */
+    public function createQueryBuilder()
+    {
+        return new Query\QueryBuilder($this);
+    }
+
     public function save($object)
     {
         if (!$this->getPDO()->inTransaction()) {
