@@ -115,15 +115,20 @@ class Usuario
 
 Db::get()->find('Usuario', 2); //busca en la tabla user por id = 2, devuelve una instancia de Usuario.
 
-Db::get()->findBy('Usuario', array('name' => 'Manuel'));
+$repository = Db::get()->getRepository('Usuario');
 
-Db::get()->findAll('Usuario');
-Db::get()->findAll('Usuario', array('name' => 'Manuel'));
+$repository->find(2);
+
+$repository->findBy(array('name' => 'Manuel'));
+
+Db::get()->getRepository('Usuario')->findAll();
+
+$repository->findAll(array('name' => 'Manuel'));
 
 //Query Builder
 
-Db::get()->createQueryBuilder('Usuario', 'u')
-         ->where('name = :n')
+$repository->createQueryBuilder('u')
+         ->where('u.name = :n')
          ->setParameter(':n' => 'Manuel')
          ->execute()->fetch();
 
