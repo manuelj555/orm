@@ -11,14 +11,20 @@
 
 namespace Manuelj555\ORM;
 
+use Exception;
 use InvalidArgumentException;
 use Manuelj555\ORM\Cache\TableInfo;
 use Manuelj555\ORM\Driver\AbstractDriver;
-use Manuelj555\ORM\Query\QueryBuilder;
+use Manuelj555\ORM\Event\ConnectionEvent;
+use Manuelj555\ORM\Event\DeleteEvent;
+use Manuelj555\ORM\Event\InsertEvent;
+use Manuelj555\ORM\Event\QueryEvent;
+use Manuelj555\ORM\Event\UpdateEvent;
 use Manuelj555\ORM\Schema\Table;
 use Manuelj555\ORM\Util\ModelUtil;
 use PDO;
 use PDOStatement;
+use ReflectionClass;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
 
@@ -49,6 +55,7 @@ class Connection
      * @var PDO
      */
     protected $pdo;
+    protected $repositories = array();
 
     public function __construct(array $config, EventDispatcherInterface $dispatcher = null)
     {
@@ -78,7 +85,7 @@ class Connection
                 , $this->config['options']);
 
         if ($this->dispatcher->hasListeners(Events::CONNECT)) {
-            $event = new Event\ConnectionEvent($this, $this->pdo);
+            $event = new ConnectionEvent($this, $this->pdo);
             $this->dispatcher->dispatch(Events::CONNECT, $event);
         }
     }
@@ -132,6 +139,47 @@ class Connection
 
     /**
      * 
+     * @param string $class
+     * @return Repository
+     */
+    public function getRepository($class)
+    {
+        if (isset($this->repositories[$class])) {
+            return $this->repositories[$class];
+        }
+
+        if (defined("$class::REPOSITORY")) {
+
+            $repositoryClass = constant("$class::REPOSITORY");
+
+            if (!class_exists($repositoryClass)) {
+                $reflection = new ReflectionClass($class);
+                $repositoryClass = $reflection->getNamespaceName() . '\\' . $repositoryClass;
+                
+                if(!class_exists($repositoryClass)){
+                    throw new Exception(sprintf('Class "%s" not exists', $repositoryClass));
+                }
+            }
+
+            $repository = new $repositoryClass($this, $class);
+
+            if (!($repository instanceof Repository)) {
+                throw new InvalidArgumentException(sprintf('The Repository "%s" for class "%s" must be instance of Manuelj555\\ORM\\Repository', $repositoryClass, $class));
+            }
+        } else {
+            $repository = new Repository($this, $class);
+        }
+        
+        return $this->repositories[$class] = $repository;
+    }
+
+    public function find($class, $id, $fetch = null)
+    {
+        return $this->getRepository($class)->find($id, $fetch);
+    }
+
+    /**
+     * 
      * @param type $sql
      * @param array $parameters
      * @return PDOStatement
@@ -143,27 +191,11 @@ class Connection
         $statement->execute($parameters);
 
         if ($this->dispatcher->hasListeners(Events::QUERY)) {
-            $event = new Event\QueryEvent($statement, $parameters);
+            $event = new QueryEvent($statement, $parameters);
             $this->dispatcher->dispatch(Events::QUERY, $event);
         }
 
         return $statement;
-    }
-
-    /**
-     * 
-     * @param string $class
-     * @return QueryBuilder
-     */
-    public function createQueryBuilder($class = null, $alias = null)
-    {
-        $query = new QueryBuilder($this, $class, $alias);
-
-        if ($class) {
-            $query->select($this->getTableFor($class)->columns);
-        }
-
-        return $query;
     }
 
     public function save($object)
@@ -172,7 +204,7 @@ class Connection
             $this->beginTransaction();
         }
 
-        $table = $this->getTableFor($object);
+        $table = $this->getTable($object);
         $pk = ModelUtil::getPK($table, $object);
 
         if ($pk) {
@@ -192,14 +224,14 @@ class Connection
             $this->beginTransaction();
         }
 
-        $event = new Event\DeleteEvent($object);
+        $event = new DeleteEvent($object);
         $this->dispatcher->dispatch(Events::PRE_DELETE, $event);
 
         if ($event->isStopped()) {
             return;
         }
 
-        $table = $this->getTableFor($object);
+        $table = $this->getTable($object);
         $pk = ModelUtil::getPK($table, $object);
 
         $this->driver->delete($table->name, "{$table->primaryKey} = ?", array($pk));
@@ -212,73 +244,11 @@ class Connection
         return $this->commit();
     }
 
-    public function find($class, $id, $fetch = null)
-    {
-        $table = $this->getTableFor($class);
-
-        return $this->prepareFind($class, array(
-                    $table->primaryKey => $id,
-                ))->fetch($fetch);
-    }
-
-    public function findBy($class, array $by, $fetch = null)
-    {
-        return $this->prepareFind($class, $by)->fetch($fetch);
-    }
-
-    public function findAll($class, array
-
-    $by = array(), $fetch = null)
-    {
-        return $this->prepareFind($class, $by)->fetchAll($fetch);
-    }
-
-    public function __call($name, $arguments)
-    {
-        if (0 === strpos($name, 'findBy')) {
-            $property = substr($name, 6);
-            $method = 'findBy';
-        } elseif (0 === strpos($name, 'findAllBy')) {
-            $property = substr($name, 9);
-            $method = 'findAll';
-        } else {
-            trigger_error(sprintf('Call to undefined method %s::%s()', __CLASS__, $name));
-        }
-
-        if (count($arguments) !== 2) {
-            throw new InvalidArgumentException('Invalid Number of Arguments, expected 2');
-        }
-
-        $property[0
-                ] = strtolower($property[0]);
-
-        list($class, $value) = $arguments;
-
-        return call_user_func_array(array($this, $method), array(
-            $class, array($property => $value)
-        ));
-    }
-
-    protected function prepareFind($class, array $by)
-    {
-        $builder = $this->createQueryBuilder($class)->select('*');
-        $method = 'where';
-
-        foreach ($by as $key => $value) {
-            $builder->{$method}("{$key} = ?");
-            $method = 'andWhere';
-        }
-
-        $builder->setParameters(array_values($by));
-
-        return $builder->execute();
-    }
-
     /**
      * 
      * @return Table
      */
-    protected function getTableFor($object)
+    public function getTable($object)
     {
         if (!$this->tableInfo) {
             $this->tableInfo = new TableInfo($this);
@@ -290,7 +260,7 @@ class Connection
 
     protected function create(Table $table, $object)
     {
-        $event = new Event\InsertEvent($object, array());
+        $event = new InsertEvent($object, array());
         $this->dispatcher->dispatch(Events::PRE_INSERT, $event);
 
         if ($event->isStopped()) {
@@ -313,7 +283,7 @@ class Connection
 
     protected function update(Table $table, $object, $pk)
     {
-        $event = new Event\UpdateEvent($object, array(), array());
+        $event = new UpdateEvent($object, array(), array());
         $this->dispatcher->dispatch(Events::PRE_UPDATE, $event);
 
         if ($event->isStopped()) {
@@ -332,7 +302,7 @@ class Connection
         }
 
         if (count($values)) {
-            $event = new Event\UpdateEvent($object, $values, $originals);
+            $event = new UpdateEvent($object, $values, $originals);
             $this->dispatcher->dispatch(Events::UPDATE, $event);
 
             if ($event->isStopped()) {
