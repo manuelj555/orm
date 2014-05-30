@@ -4,8 +4,8 @@
         "symfony/event-dispatcher": "dev-master"
     },
     "require-dev":{
-        "symfony/debug": "dev-master",
-        "symfony/dependency-injection": "dev-master"
+        "symfony/debug": "*",
+        "symfony/dependency-injection": "*"
     },
     "autoload": {
         "psr-0": {
