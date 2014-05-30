@@ -1,7 +1,7 @@
 {
     "name": "manuelj555/orm",
     "require":{
-        "symfony/event-dispatcher": "dev-master"
+        "symfony/event-dispatcher": "*"
     },
     "require-dev":{
         "symfony/debug": "*",
